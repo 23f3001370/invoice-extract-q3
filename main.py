@@ -212,8 +212,11 @@ def extract_amount_tax(text: str) -> tuple[float | None, float | None, str | Non
     )
     tax, cur2 = _extract_money(
         [
-            r"(?:gst|igst|cgst|sgst|vat|tax|service\s*tax|sales\s*tax|duty)\s*\([^)]*\)",
-            r"(?:gst|igst|cgst|sgst|vat|tax|service\s*tax|sales\s*tax|duty)",
+            # \b after "tax" so it doesn't match inside "Taxable" (word boundary
+            # requires a non-word char between "Tax" and what follows; "Taxable"
+            # has none, so it's correctly skipped).
+            r"\b(?:gst|igst|cgst|sgst|vat|service\s*tax|sales\s*tax|duty|tax)\b\s*\([^)]*\)",
+            r"\b(?:gst|igst|cgst|sgst|vat|service\s*tax|sales\s*tax|duty|tax)\b",
         ],
         text,
     )
