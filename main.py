@@ -50,20 +50,39 @@ def _first_match(patterns: list[str], text: str, flags=re.IGNORECASE) -> str | N
     return None
 
 
+_ID_TOKEN = r"[A-Za-z0-9/]+(?:[\-/][A-Za-z0-9]+)*"  # e.g. RB-3390, NS/2026/778, INV-2026-0041
+
+
 def extract_invoice_no(text: str) -> str | None:
     # Separator between label and value: colon, hash, dash, em/en-dash, or just
     # whitespace (some templates print "Invoice No RB-3390" with no punctuation).
     sep = r"\s*[:#\-—–]\s*|\s+"
-    return _first_match(
+    found = _first_match(
         [
             # Label may have extra words before the separator, e.g. "Invoice Reference No:".
             r"(?:invoice|bill|receipt|order|voucher|doc(?:ument)?)"
             rf"[^:#\-—–\n]*?(?:no\.?|number|#|id)(?:{sep})([A-Za-z0-9/\-]{{3,}})",
             rf"ref(?:erence)?(?:{sep})([A-Za-z0-9/\-]{{3,}})",
             rf"\bID(?:{sep})([A-Za-z0-9/\-]{{3,}})",
+            # Bare "Invoice: X" / "Invoice #X" / "Invoice X" without "No"/"Number".
+            # Requires a digit in the captured token so it can't match plain
+            # words like "Invoice for ..." or "Invoice Total: ...".
+            rf"\binvoice(?:{sep})([A-Za-z0-9/\-]*\d[A-Za-z0-9/\-]*)",
         ],
         text,
     )
+    if found:
+        return found
+
+    # Fallback: no labelled match at all. Look for an ID-shaped token (letters
+    # mixed with digits via a dash/slash, e.g. "RB-3390") on the same line as
+    # or near the word "invoice" — covers title-line formats like
+    # "TAX INVOICE RB-3390" with no explicit "No:"/"Ref:" label.
+    m = re.search(rf"invoice\W*({_ID_TOKEN})", text, re.IGNORECASE)
+    if m and re.search(r"\d", m.group(1)) and re.search(r"[A-Za-z]", m.group(1)):
+        return m.group(1)
+
+    return None
 
 
 _MONTHS = {
