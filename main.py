@@ -51,13 +51,16 @@ def _first_match(patterns: list[str], text: str, flags=re.IGNORECASE) -> str | N
 
 
 def extract_invoice_no(text: str) -> str | None:
+    # Separator between label and value: colon, hash, dash, em/en-dash, or just
+    # whitespace (some templates print "Invoice No RB-3390" with no punctuation).
+    sep = r"\s*[:#\-—–]\s*|\s+"
     return _first_match(
         [
-            # Label may have extra words before the colon, e.g. "Invoice Reference No:".
+            # Label may have extra words before the separator, e.g. "Invoice Reference No:".
             r"(?:invoice|bill|receipt|order|voucher|doc(?:ument)?)"
-            r"[^:#\n]*?(?:no\.?|number|#|id)\s*[:#]\s*([A-Za-z0-9/\-]+)",
-            r"ref(?:erence)?[^:#\n]*[:#]\s*([A-Za-z0-9/\-]+)",
-            r"\bID\s*[:#]\s*([A-Za-z0-9/\-]+)",
+            rf"[^:#\-—–\n]*?(?:no\.?|number|#|id)(?:{sep})([A-Za-z0-9/\-]{{3,}})",
+            rf"ref(?:erence)?(?:{sep})([A-Za-z0-9/\-]{{3,}})",
+            rf"\bID(?:{sep})([A-Za-z0-9/\-]{{3,}})",
         ],
         text,
     )
