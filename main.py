@@ -53,7 +53,11 @@ def _first_match(patterns: list[str], text: str, flags=re.IGNORECASE) -> str | N
 def extract_invoice_no(text: str) -> str | None:
     return _first_match(
         [
-            r"(?:invoice\s*(?:no\.?|number|#)|ref(?:erence)?)\s*[:#]\s*([A-Za-z0-9/\-]+)",
+            # Label may have extra words before the colon, e.g. "Invoice Reference No:".
+            r"(?:invoice|bill|receipt|order|voucher|doc(?:ument)?)"
+            r"[^:#\n]*?(?:no\.?|number|#|id)\s*[:#]\s*([A-Za-z0-9/\-]+)",
+            r"ref(?:erence)?[^:#\n]*[:#]\s*([A-Za-z0-9/\-]+)",
+            r"\bID\s*[:#]\s*([A-Za-z0-9/\-]+)",
         ],
         text,
     )
