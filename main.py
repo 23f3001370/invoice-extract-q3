@@ -63,6 +63,7 @@ def extract_invoice_no(text: str) -> str | None:
     # Separator between label and value: colon, hash, dash, em/en-dash, or just
     # whitespace (some templates print "Invoice No RB-3390" with no punctuation).
     sep = r"\s*[:#\-—–]\s*|\s+"
+    flags = re.IGNORECASE | re.MULTILINE  # ^ must match start of each line
     found = _first_match(
         [
             # Label may have extra words before the separator, e.g. "Invoice Reference No:".
@@ -70,12 +71,17 @@ def extract_invoice_no(text: str) -> str | None:
             rf"[^:#\-—–\n]*?(?:no\.?|number|#|id)(?:{sep})([A-Za-z0-9/\-]{{3,}})",
             rf"ref(?:erence)?(?:{sep})([A-Za-z0-9/\-]{{3,}})",
             rf"\bID(?:{sep})([A-Za-z0-9/\-]{{3,}})",
+            # Standalone "No:" / "No.:" (label word on a previous line, e.g.
+            # "INVOICE\nNo: LM-5510"). Requires a digit in the token to avoid
+            # false positives on prose sentences containing "No ...".
+            rf"^\s*no\.?(?:{sep})([A-Za-z0-9/\-]*\d[A-Za-z0-9/\-]*)",
             # Bare "Invoice: X" / "Invoice #X" / "Invoice X" without "No"/"Number".
             # Requires a digit in the captured token so it can't match plain
             # words like "Invoice for ..." or "Invoice Total: ...".
             rf"\binvoice(?:{sep})([A-Za-z0-9/\-]*\d[A-Za-z0-9/\-]*)",
         ],
         text,
+        flags=flags,
     )
     if found:
         return found
@@ -218,10 +224,15 @@ def extract_amount_tax(text: str) -> tuple[float | None, float | None, str | Non
     )
     tax, cur2 = _extract_money(
         [
-            # \b after "tax" so it doesn't match inside "Taxable" (word boundary
-            # requires a non-word char between "Tax" and what follows; "Taxable"
-            # has none, so it's correctly skipped).
+            # \b after "tax" so it doesn't match inside "Taxable". Also require
+            # that the word "tax" not be immediately preceded by words that
+            # would make it part of an AMOUNT label rather than the tax figure
+            # itself (e.g. "Amount Before Tax:", "Amount Excluding Tax:",
+            # "Amount Ex Tax:") — those name the subtotal, not the tax.
+            # Python needs fixed-width lookbehinds, so each is spelled out.
+            r"(?<!before\s)(?<!excluding\s)(?<!excl\s)(?<!excl\.\s)(?<!ex\s)"
             r"\b(?:gst|igst|cgst|sgst|vat|service\s*tax|sales\s*tax|duty|tax)\b\s*\([^)]*\)",
+            r"(?<!before\s)(?<!excluding\s)(?<!excl\s)(?<!excl\.\s)(?<!ex\s)"
             r"\b(?:gst|igst|cgst|sgst|vat|service\s*tax|sales\s*tax|duty|tax)\b",
         ],
         text,
