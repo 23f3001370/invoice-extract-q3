@@ -130,9 +130,21 @@ def extract_vendor(text: str) -> str | None:
     return None
 
 
+_CUR_TOKEN = r"Rs\.?|INR|USD|EUR|GBP|\$|₹|£|€"
+
+
 def _parse_amount(num_str: str) -> float | None:
-    # Strip thousands separators (handles both "1,600.00" and Indian "1,40,000.00").
-    cleaned = num_str.replace(",", "").strip()
+    cleaned = num_str.strip()
+    if "," in cleaned and "." in cleaned:
+        # Both present: comma is a thousands separator (e.g. "1,40,000.00").
+        cleaned = cleaned.replace(",", "")
+    elif "," in cleaned:
+        # Only a comma: could be thousands ("1,600") or a decimal comma ("780,00").
+        # A comma followed by exactly 2 digits at the end is treated as decimal.
+        if re.search(r",\d{2}$", cleaned):
+            cleaned = cleaned.replace(",", ".")
+        else:
+            cleaned = cleaned.replace(",", "")
     try:
         return float(cleaned)
     except ValueError:
@@ -140,17 +152,23 @@ def _parse_amount(num_str: str) -> float | None:
 
 
 def _extract_money(labels: list[str], text: str) -> tuple[float | None, str | None]:
-    """Search for a labelled money line, return (amount, currency_hint)."""
+    """Search for a labelled money line, return (amount, currency_hint).
+    Allows extra words between the label and the colon (e.g. "Amount Due:"),
+    and accepts the currency symbol/code either before or after the number
+    (e.g. "Rs. 780.00" or "780.00 INR")."""
     for label in labels:
+        # currency BEFORE the number: "Label ...: Rs. 780.00" / "Label: $780"
         m = re.search(
-            rf"{label}\s*(?:\([^)]*\))?\s*[:]\s*(?:(Rs\.?|INR|USD|EUR|GBP|\$|₹|£|€)\s*)?([\d,]+\.?\d*)",
+            rf"{label}[^:\n]*[:]\s*(?:({_CUR_TOKEN})\s*)?([\d,]+[.,]?\d*)"
+            rf"(?:\s*({_CUR_TOKEN}))?",
             text,
             re.IGNORECASE,
         )
         if m:
-            currency_hint = m.group(1)
+            currency_hint = m.group(1) or m.group(3)
             amount = _parse_amount(m.group(2))
-            return amount, currency_hint
+            if amount is not None:
+                return amount, currency_hint
     return None, None
 
 
@@ -161,20 +179,20 @@ def extract_amount_tax(text: str) -> tuple[float | None, float | None, str | Non
             r"(?:taxable|net)\s*(?:value|amount)",
             r"(?:base|basic)\s*amount",
             r"amount\s*\(?before\s*tax\)?",
-            r"\bamount\b",
+            r"\bamount\b(?!\s*due)",
             r"\bprice\b",
         ],
         text,
     )
     tax, cur2 = _extract_money(
         [
-            r"(?:gst|igst|cgst|sgst|vat|tax)\s*\([^)]*\)",
-            r"(?:gst|igst|cgst|sgst|vat|tax)",
+            r"(?:gst|igst|cgst|sgst|vat|tax|service\s*tax|sales\s*tax|duty)\s*\([^)]*\)",
+            r"(?:gst|igst|cgst|sgst|vat|tax|service\s*tax|sales\s*tax|duty)",
         ],
         text,
     )
     total, cur3 = _extract_money(
-        [r"grand\s*total", r"total\s*due", r"\btotal\b"],
+        [r"grand\s*total", r"total\s*due", r"amount\s*due", r"\btotal\b"],
         text,
     )
 
